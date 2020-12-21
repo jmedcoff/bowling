@@ -1,0 +1,171 @@
+#+TITLE: Bowling in Python
+#+AUTHOR: Jason Medcoff
+#+DATE: 21 December 2020
+
+#+OPTIONS: toc:nil
+
+#+LaTeX_HEADER: \usepackage{geometry}
+#+LaTeX_HEADER: \geometry{a4paper}
+
+
+* Requirements
+
+The game consists of ten frames. In each frame the player has two
+opportunties to knock down ten pins. The score for the frame is the
+total number of pins knocked down, plus bonuses for strikes and
+spares. A spare is when the player knocks down all ten pins in two
+tries. The bonus for that frame is the number of pins knocked down by
+the next roll. A strike is when the player knocks down all ten pins on
+the first try. The bonus for that frame is the value of the next two
+balls rolled.
+
+In the tenth frame a player who rolls a spare or strike is allowed to
+roll the extra balls to complete the frame. However, no more than
+three balls can be rolled in the tenth frame.
+
+The above is taken from Robert C. Martin's bowling game kata. He
+begins the exercise by writing unit tests for a TDD approach. We will
+take the same approach here. But, to keep things interesting, instead
+of using a traditional OOP/imperative approach, we will use FP
+facilities and prohibit the use of loops or state with scope greater
+than a function call. This will make testing really easy, because we
+can start with small, easily testable pieces of code and compose them
+into the big pieces of code that will run the game.
+
+** Imports
+
+#+BEGIN_SRC python :session
+import random
+#+END_SRC
+
+#+RESULTS:
+
+* Design
+
+Since we are attempting a FP approach, the program design needs to be
+done differently. With OOP it would make sense to think about
+princples and patterns. For FP, we just think about functions. So, it
+would make sense to start by thinking about a solution to the problem
+looking something like this:
+
+#+BEGIN_SRC python
+def score_game(game) -> score:
+    ...
+#+END_SRC
+
+Of course, it would be a very long function, so we can start thinking
+about the most pertinent tool in FP: functional decomposition. Given a
+problem $P$, we want some sort of intermediate step $S$ such that
+$problem \mapsto S \and S \mapsto solution \implies problem \mapsto
+solution$.
+
+It would make the most sense to score each frame individually, and
+then take their sum. Sometimes though, the score of a frame depends on
+rolls in the next frame. So, the solution becomes:
+
+#+BEGIN_SRC python
+def score_game(game) -> score:
+    return sum(score_frame(get_frame_i(game, i), get_frame_i(game, i+1))
+#+END_SRC
+
+
+
+
+* Test Data Framework
+
+We will start by writing some code to "play" a game of bowling,
+beginning with individual frames. 
+
+#+BEGIN_SRC python :session
+def play_normal_frame():
+    first_roll = random.randint(0, 10)
+    return [first_roll, random.randint(0, 10 - first_roll)]
+
+def play_last_frame():
+    first_two_rolls = play_normal_frame()
+    return first_two_rolls if sum(first_two_rolls) < 10 else first_two_rolls + [random.randint(0, 10)]
+#+END_SRC
+
+Now we can simulate playing an entire game.
+
+#+BEGIN_SRC python :session
+def play_game():
+    return [play_normal_frame() for _ in range(9)] + [play_last_frame()]
+#+END_SRC
+
+* Code
+
+Let's start by solving the problem in a typical way for an enterprise
+software developer.
+
+#+BEGIN_SRC python :session
+  def score_game(game):
+      pass #TODO
+#+END_SRC
+
+Lovely progress, time for a coffee break. Upon returning, we decide
+that we probably will want some helper functions to decide whether a
+frame is a strike or a spare.
+
+#+BEGIN_SRC python :session
+def is_frame_spare(frame):
+    return sum(frame) == 10 and frame[0] < 10
+
+def is_frame_strike(frame):
+    return frame[0] == 10
+#+END_SRC
+
+
+Next, we can start building the scoring mechanism. Thinking about how
+a frame of bowling is scored, there are really only four cases to
+consider:
+
+- A strike is obtained and there are next rolls: the score is the
+  first and second roll plus the next two rolls
+- A spare is obtained and there are next rolls: the score is the first
+  and second roll plus the next roll
+- It's the last frame: the score is the first and second roll, plus
+  the third roll if there is one
+- All others: the score is the first and second roll
+
+So, our frame scoring machinery need only consider these four
+situations. In fact, we can see that the last two (last frame and
+non-strike/non-spare frames) are the same conditions, just with the
+possibility of a third roll being the only deciding factor between the
+two. Remembering the test data code, the last frame can be of length
+two or three, so we can just handle the generic case by summing the
+whole frame.
+
+#+BEGIN_SRC python :session
+def score_frame(current_frame, next_frame = None):
+    if is_frame_strike(current_frame) and next_frame:
+        return sum(current_frame) + next_frame[0] + next_frame[1]
+    if is_frame_spare(current_frame) and next_frame:
+        return sum(current_frame) + next_frame[0]
+    else:
+        return sum(current_frame)
+#+END_SRC
+
+For the whole game itself, we need to consider both the current frame
+and the next frame, so a simple iterative approach doesn't cut
+it. Instead we will go with a recursive approach because this whole
+ordeal is already entirely functional and I couldn't manage to get a
+loop driven solution working without index-out-of-bounds errors.
+
+#+BEGIN_SRC python :session
+def score_game(game):
+    print(game)
+    return score_game_rec(game, 0)
+
+def score_game_rec(game, total):
+    if len(game) < 2:
+        return total + score_frame(game[0])
+    else:
+        return score_game_rec(game[1:], total + score_frame(game[0], game[1]))
+#+END_SRC
+
+Note that the scoring function includes a tail call optimization; that
+is, rather than just summing up the result on each frame and popping
+the call stack ten times at the end, we maintain a running total. In a
+tail call optimized language like lisp, the compiler would notice this
+and not recurse on the call stack excessively.
